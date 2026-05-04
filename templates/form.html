@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Formulario DNS</title>
+    <link rel="stylesheet" href="/static/sty.css">
+    <script src="/static/app.js" defer></script>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h2>Formulario</h2>
+
+    <div class="form-group">
+        <label for="nombre">Nombre</label>
+        <input id="nombre" type="text" placeholder="Introduce tu nombre">
+    </div>
+
+    <div class="form-group">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="Introduce tu email">
+    </div>
+
+    <button type="button" onclick="enviar()">Enviar</button>
+
+    <button type="button" id="btnDns" onclick="verificarDNS()" style="display:none;">
+        Verificar DNS
+    </button>
+
+    <button type="button" id="btnPago" onclick="pagar()" style="display:none;">
+        Realizar pago
+    </button>
+
+    <p id="status"></p>
+
+</div>
+
+</body>
+</html>

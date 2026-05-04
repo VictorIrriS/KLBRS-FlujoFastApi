@@ -1,15 +1,27 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+import requests
+import dns.resolver
 import smtplib
 from email.message import EmailMessage
 import secrets
 import string
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 
 app = FastAPI()
 
-load_dotenv("data.env")
+# Static + templates
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+
+# ENV
+load_dotenv()
 
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT"))
@@ -17,108 +29,170 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
-def enviar_email(nombre: str, email: str, mensaje: str):
+# =========================
+# UTIL
+# =========================
+
+def generar_token():
+    chars = string.ascii_letters + string.digits + "-_"
+    rand = ''.join(secrets.choice(chars) for _ in range(43))
+    return f"klbrs-site-verification={rand}"
+
+
+def enviar_email(asunto: str, contenido: str):
     msg = EmailMessage()
-    msg['Subject'] = 'Nuevo formulario recibido'
-    msg['From'] = SMTP_USER
-    msg['To'] = EMAIL_TO
-
-    msg.set_content(f"""
-Nuevo formulario recibido:
-
-Nombre: {nombre}
-Email: {email}
-Mensaje: {mensaje}
-""")
-
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as smtp:
-    	smtp.login(SMTP_USER, SMTP_PASS)
-    	smtp.send_message(msg)
-
-
-def filtro_email(email: str) -> bool:
-    DOMINIOS_BLOQUEADOS = {
-        "gmail",
-        "hotmail",
-        "outlook",
-        "yahoo"
-    }
+    msg["Subject"] = asunto
+    msg["From"] = SMTP_USER
+    msg["To"] = EMAIL_TO
+    msg.set_content(contenido)
 
     try:
-        dominio_completo = email.split("@")[1].lower()
-        proveedor = dominio_completo.split(".")[0]
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as smtp:
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
+    except Exception as e:
+        print("SMTP ERROR:", e)
+        raise
 
-        return proveedor not in DOMINIOS_BLOQUEADOS
 
-    except IndexError:
-        return False
-        
-def generar_cadena(longitud: int = 43) -> str:
-    caracteres = string.ascii_letters + string.digits + "_-"
-    random_part = ''.join(secrets.choice(caracteres) for _ in range(longitud))
-    return f"klbrs-site-verification={random_part}"
+# =========================
+# FRONT
+# =========================
 
 @app.get("/", response_class=HTMLResponse)
-def formulario():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Formulario</title>
-</head>
+def home(request: Request):
+    return templates.TemplateResponse("form.html", {"request": request})
 
-<body style="margin:0;font-family:Arial;background:#0f172a;display:flex;justify-content:center;align-items:center;height:100vh;">
 
-<div style="width:320px;background:#1e293b;padding:28px;border-radius:10px;">
-    <h2 style="text-align:center;color:#f1f5f9;">Formulario</h2>
+# =========================
+# ENVIAR FORM
+# =========================
 
-    <form action="/enviar" method="post" style="display:flex;flex-direction:column;gap:12px;">
-        <label style="color:#cbd5e1;">Nombre</label>
-        <input type="text" name="nombre" required>
+@app.post("/enviar")
+def enviar(nombre: str = Form(...), email: str = Form(...)):
 
-        <label style="color:#cbd5e1;">Email</label>
-        <input type="email" name="email" required>
+    if "@" not in email:
+        return JSONResponse({"ok": False, "error": "email inválido"})
 
-        <label style="color:#cbd5e1;">Mensaje</label>
-        <textarea name="mensaje" rows="4" required></textarea>
+    token = generar_token()
 
-        <button type="submit" style="padding:10px;background:#3b82f6;color:white;border:none;border-radius:6px;">
-            Enviar
-        </button>
-    </form>
-</div>
+    mensaje = f"""
+Nombre: {nombre}
+Email: {email}
 
-</body>
-</html>
+Añada este código a su DNS:
+
+{token}
 """
 
+    enviar_email("Verificación DNS", mensaje)
 
-@app.post("/enviar", response_class=HTMLResponse)
-def enviar(nombre: str = Form(...), email: str = Form(...), mensaje: str = Form(...)):
+    return JSONResponse({
+        "ok": True,
+        "email": email,
+        "token": token
+    })
 
-    if not filtro_email(email):
-        return """
-        <h2 style="color:red;text-align:center;margin-top:50px;">
-            Email no permitido
-        </h2>
-        """
 
-    codigo = generar_cadena(32)
-    cadena = f"/{email}/{codigo}"
+# =========================
+# 2. VERIFICAR DNS
+# =========================
+
+@app.post("/verificar-dns")
+def verificar_dns(token: str = Form(...)):
 
     try:
-        enviar_email(nombre, email, mensaje + cadena)
+        dominio = EMAIL_TO.split("@")[1].strip().lower()
 
-        return f"""
-        <h2 style="color:green;text-align:center;margin-top:50px;">
-            Formulario enviado correctamente
-        </h2>
-        <p style="text-align:center;">
-            Ruta generada:
-        </p>
-        <p style="text-align:center;"><b>{cadena}</b></p>
-        """
+        # url = f"https://{dominio}/{token}.txt"
 
-    except Exception as e:
-        return f"<h2>Error</h2><pre>{str(e)}</pre>"
+        url = "https://klbrs.es/asiNGORJGNFa_SDOGMJr94-ASITJNENTOsdinrtW5sO.txt"
+
+        # token fijo de prueba (el que sabes que está en el archivo)
+        token_esperado = "asiNGORJGNFa_SDOGMJr94-ASITJNENTOsdinrtW5sO"
+
+
+        response = requests.get(url, timeout=5)
+
+        print(response.status_code)
+        print(response.headers.get("content-type"))
+        print(repr(response.text[:200]))
+
+
+        if response.status_code == 200:
+            contenido = response.text.strip()
+
+            # if token in contenido:
+            #     return {"ok": True}
+
+            if token_esperado in contenido:
+                return {"ok": True}
+
+
+
+        return {
+            "ok": False,
+            "error": "token no encontrado en archivo"
+        }
+
+    except requests.RequestException as e:
+        return {
+            "ok": False,
+            "error": str(e)
+        }
+
+#------------------------------
+
+# @app.post("/verificar-dns")
+# def verificar_dns(email: str = Form(...), token: str = Form(...)):
+ 
+    # try:
+    #     dominio = email.split("@")[1].strip().lower()
+    #     respuestas = dns.resolver.resolve(dominio, "TXT")
+
+    #     registros = []
+
+    #     for r in respuestas:
+    #         txt = r.to_text().strip('"')
+    #         txt = txt.replace('"', "").strip()
+    #         registros.append(txt)
+
+    #     for registro in registros:
+    #         if token in registro:
+    #             return {"ok": True}
+
+    #     return {
+    #         "ok": False,
+    #         "error": "token no encontrado en DNS",
+    #         "debug": registros
+    #     }
+
+    # except dns.resolver.NXDOMAIN:
+    #     return {"ok": False, "error": "dominio no existe"}
+
+    # except dns.resolver.NoAnswer:
+    #     return {"ok": False, "error": "no hay registros TXT"}
+
+    # except Exception as e:
+    #     return {"ok": False, "error": str(e)}
+    
+# =========================
+# 3. PAGO
+# =========================
+
+@app.post("/pago")
+def pago(pagoRealizado: bool = Form(...)):
+    if not pagoRealizado:
+        enviar_email("Pago fallido", "El pago no se ha realizado correctamente.")
+        return {"ok": False, "error": "pago no realizado"}
+    
+    contenido = f"""
+                    Pago realizado correctamente
+
+                    Pago:30€
+                    Estado: OK
+                """
+
+    enviar_email("Pago realizado", contenido)
+ 
+    return {"ok": True}
