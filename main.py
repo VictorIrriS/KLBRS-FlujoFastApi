@@ -18,7 +18,7 @@ app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+
 
 # ENV
 load_dotenv()
@@ -56,7 +56,10 @@ def enviar_email(asunto: str, contenido: str):
             smtp.send_message(msg)
     except Exception as e:
         print("SMTP ERROR:", e)
-        raise
+        
+        return False
+
+    return True
 
 def enviar_telegram(mensaje: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"

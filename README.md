@@ -14,34 +14,40 @@ Proyecto de ejemplo con FastAPI que implementa un flujo completo de:
 
 # Instalación del entorno
 
-## 1. Clonar el repositorio
+## Clonar el repositorio
 
 ```bash
 git clone https://github.com/VictorIrriS/KLBRS-FlujoFastApi.git
 cd KLBRS-FlujoFastApi
 ```
 
-## 2. Crear entorno virtual
+## Crear entorno virtual
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-## 3. Instalar dependencias
+## Instalar dependencias
 
 ```bash
 pip install -r requirements.txt
 ```
----
-#Ejecutar el proyecto
+## Activar nginx
+
 ```bash
-uvicorn main:app --reload
+sudo systemctl start nginx
+```
+
+---
+## Ejecutar main.py
+```bash
+uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 Abrir en el navegador
 http://127.0.0.1:8000
 
-#Variables de entorno
+# Variables de entorno
 
 crear .env con
 ```
@@ -51,3 +57,54 @@ SMTP_USER=tu_email
 SMTP_PASS=tu_password
 EMAIL_TO=destino@dominio.com
 ```
+
+---
+
+# Pipeline Propuesto
+
+## Git (GitHub/GitLab)
+
+- main: prod
+- dev: integración
+- feature/*: desarrollo
+ 
+## CI 
+
+- Test (pytest)
+- Linting (isort, black, flake8)
+- SAST (Bandit)
+- DAST (ZAP)
+   
+## Artifact (Docker image)
+
+- Python runtime
+- App
+- requirements.txt
+- configuracion runtime
+   
+## Registry (GHCR / Harbor / GitLab Registry)
+
+- Versionado de imágenes
+- Rollbacks
+   
+## CD (deploy)
+
+- Bajar la imagen del Registry
+- actualizar contenedores
+- reiniciar servicios
+   
+## Server (Docker Compose / Kubernetes)
+
+- Docker Compose: "simple y rapido"
+- Kubernetes: "auto escalado y secrets management"
+
+## Nginx reverse proxy
+
+- Https
+- Rate limiting
+- Routing
+
+
+
+
+
