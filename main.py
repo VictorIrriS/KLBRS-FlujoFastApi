@@ -29,6 +29,10 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
+#telegram
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+
 # =========================
 # UTIL
 # =========================
@@ -54,7 +58,16 @@ def enviar_email(asunto: str, contenido: str):
         print("SMTP ERROR:", e)
         raise
 
+def enviar_telegram(mensaje: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "HTML"
+    }
+
+    requests.post(url, data=payload)
 # =========================
 # FRONT
 # =========================
@@ -97,102 +110,78 @@ Añada este código a su DNS:
 # =========================
 # 2. VERIFICAR DNS
 # =========================
-
 @app.post("/verificar-dns")
 def verificar_dns(token: str = Form(...)):
 
+    # dominio = EMAIL_TO.split("@")[1].strip().lower()
+
+    # url = f"https://{dominio}/{token}.txt"
+
+    dominio = "klbrs.es"
+
+
+    # token fijo de prueba (el que sabes que está en el archivo)
+    token_esperado = "asiNGORJGNFa_SDOGMJr94-ASITJNENTOsdinrtW5sO"
+
     try:
-        dominio = EMAIL_TO.split("@")[1].strip().lower()
+        
+        respuestas = dns.resolver.resolve(dominio, "TXT")
+        
+        print("\nDNS TXT encontrados:")
 
-        # url = f"https://{dominio}/{token}.txt"
+        for r in respuestas:
+            txt = r.to_text().strip('"')
+            print(" -", txt)
 
-        url = "https://klbrs.es/asiNGORJGNFa_SDOGMJr94-ASITJNENTOsdinrtW5sO.txt"
+            # lógica de verificación
+            if txt.startswith("klbrs-site-verification="):
+                valor = txt.split("=", 1)[1].strip()
 
-        # token fijo de prueba (el que sabes que está en el archivo)
-        token_esperado = "asiNGORJGNFa_SDOGMJr94-ASITJNENTOsdinrtW5sO"
+                print("valor extraído:", valor)
 
-
-        response = requests.get(url, timeout=5)
-
-        print(response.status_code)
-        print(response.headers.get("content-type"))
-        print(repr(response.text[:200]))
-
-
-        if response.status_code == 200:
-            contenido = response.text.strip()
-
-            # if token in contenido:
-            #     return {"ok": True}
-
-            if token_esperado in contenido:
-                return {"ok": True}
-
-
+                # comparación contra mock
+                if valor == token_esperado:
+                    return {
+                        "ok": True,
+                        "mode": "dns-mock",
+                        "domain": dominio,
+                        "token": valor
+                    }
 
         return {
             "ok": False,
-            "error": "token no encontrado en archivo"
+            "error": "token no encontrado en DNS",
+            "mode": "dns-mock"
         }
 
-    except requests.RequestException as e:
+    except Exception as e:
         return {
             "ok": False,
-            "error": str(e)
+            "error": str(e),
+            "mode": "dns-mock-error"
         }
 
-#------------------------------
 
-# @app.post("/verificar-dns")
-# def verificar_dns(email: str = Form(...), token: str = Form(...)):
- 
-    # try:
-    #     dominio = email.split("@")[1].strip().lower()
-    #     respuestas = dns.resolver.resolve(dominio, "TXT")
-
-    #     registros = []
-
-    #     for r in respuestas:
-    #         txt = r.to_text().strip('"')
-    #         txt = txt.replace('"', "").strip()
-    #         registros.append(txt)
-
-    #     for registro in registros:
-    #         if token in registro:
-    #             return {"ok": True}
-
-    #     return {
-    #         "ok": False,
-    #         "error": "token no encontrado en DNS",
-    #         "debug": registros
-    #     }
-
-    # except dns.resolver.NXDOMAIN:
-    #     return {"ok": False, "error": "dominio no existe"}
-
-    # except dns.resolver.NoAnswer:
-    #     return {"ok": False, "error": "no hay registros TXT"}
-
-    # except Exception as e:
-    #     return {"ok": False, "error": str(e)}
     
 # =========================
 # 3. PAGO
 # =========================
 
+MOCK_PAYMENT = True
+
 @app.post("/pago")
-def pago(pagoRealizado: bool = Form(...)):
-    if not pagoRealizado:
-        enviar_email("Pago fallido", "El pago no se ha realizado correctamente.")
-        return {"ok": False, "error": "pago no realizado"}
+def pago():
+
+    if MOCK_PAYMENT:
+        ok = True
+    else:
+        ok = False  # aquí iría Stripe / PayPal / etc
+
+    if ok:
+        enviar_email("Pago realizado", "Pago: 30€ Estado: OK")
+        enviar_telegram("Pago realizado: 30€\nEstado: OK")
+        return {"ok": True}
     
-    contenido = f"""
-                    Pago realizado correctamente
+    enviar_telegram("Pago rechazado: 30€\nEstado: Rechazado")
 
-                    Pago:30€
-                    Estado: OK
-                """
-
-    enviar_email("Pago realizado", contenido)
- 
-    return {"ok": True}
+    return {"ok": False, "error": "pago rechazado"}
