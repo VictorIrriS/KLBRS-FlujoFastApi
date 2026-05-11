@@ -1,12 +1,8 @@
-from fastapi import FastAPI, Form, Request, BackgroundTasks
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from zapv2 import ZAPv2
-import time
-
-import uuid
 import requests
 import dns.resolver
 import smtplib
@@ -17,16 +13,6 @@ import os
 from dotenv import load_dotenv
 
 app = FastAPI()
-
-# zap
-zap = ZAPv2(
-    apikey='',
-    proxies={
-        'http': 'http://127.0.0.1:8090',
-        'https': 'http://127.0.0.1:8090'
-    }
-)
-
 
 # Static + templates
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -46,10 +32,6 @@ EMAIL_TO = os.getenv("EMAIL_TO")
 #telegram
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-
-# Variables
-
-SCAN_DB = {}
 
 # =========================
 # UTIL
@@ -74,7 +56,7 @@ def enviar_email(asunto: str, contenido: str):
             smtp.send_message(msg)
     except Exception as e:
         print("SMTP ERROR:", e)
-        
+
         return False
 
     return True
@@ -89,59 +71,6 @@ def enviar_telegram(mensaje: str):
     }
 
     requests.post(url, data=payload)
-    
-def run_scan(scan_id: str, url: str):
-
-    SCAN_DB[scan_id]["status"] = "spidering"
-    zap.urlopen(url)
-
-    spider_id = zap.spider.scan(url, maxchildren=20)
-
-    while int(zap.spider.status(spider_id)) < 100:
-        SCAN_DB[scan_id]["progress"] = int(zap.spider.status(spider_id))
-        time.sleep(2)
-
-    SCAN_DB[scan_id]["status"] = "active_scan"
-
-    ascan_id = zap.ascan.scan(url, recurse=False, inscopeonly=True)
-
-    while int(zap.ascan.status(ascan_id)) < 100:
-        SCAN_DB[scan_id]["progress"] = int(zap.ascan.status(ascan_id))
-        time.sleep(3)
-
-    alerts = zap.core.alerts(baseurl=url)
-
-    result = build_summary(alerts)
-
-    SCAN_DB[scan_id]["status"] = "done"
-    SCAN_DB[scan_id]["progress"] = 100
-    SCAN_DB[scan_id]["result"] = result
-    
-def build_summary(alerts):
-
-    summary = {
-        "High": 0,
-        "Medium": 0,
-        "Low": 0,
-        "Informational": 0,
-        "vulns": []
-    }
-
-    for a in alerts:
-        risk = a.get("risk", "Informational")
-
-        if risk in summary:
-            summary[risk] += 1
-
-        summary["vulns"].append({
-            "risk": risk,
-            "name": a.get("name"),
-            "url": a.get("url"),
-            "desc": a.get("description", "")
-        })
-
-    return summary
-    
 # =========================
 # FRONT
 # =========================
@@ -259,27 +188,3 @@ def pago():
     enviar_telegram("Pago rechazado: 30€\nEstado: Rechazado")
 
     return {"ok": False, "error": "pago rechazado"}
-    
-# =========================
-# 4. Scaneo Zap
-# =========================   
-
-@app.post("/scan")
-def create_scan(background_tasks: BackgroundTasks, url: str = Form(...)):
-
-    scan_id = str(uuid.uuid4())
-
-    SCAN_DB[scan_id] = {
-        "status": "starting",
-        "progress": 0,
-        "result": None
-    }
-
-    background_tasks.add_task(run_scan, scan_id, url)
-
-    return {"scan_id": scan_id}
-    
-@app.get("/scan/{scan_id}")
-def get_scan(scan_id: str):
-    return SCAN_DB.get(scan_id, {"error": "not found"})
-
